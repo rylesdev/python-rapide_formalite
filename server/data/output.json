@@ -1,0 +1,16 @@
+{
+  "emails": [
+    {
+      "from": "exemple@domaine.com",
+      "subject": "Sujet de test",
+      "date": "Mon, 1 Apr 2025 12:34:56 +0000",
+      "summary": "Voici un aperçu du contenu du mail..."
+    },
+    {
+      "from": "autre@exemple.com",
+      "subject": "Deuxième mail",
+      "date": "Tue, 2 Apr 2025 09:12:34 +0000",
+      "summary": "Contenu très intéressant à propos du projet..."
+    }
+  ]
+}
