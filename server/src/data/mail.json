@@ -1,0 +1,51 @@
+{
+    "root": {
+        "name": "Gestion des Emails",
+        "description": "Root node représentant tous les emails reçus dans le système de gestion.",
+        "emails": [],
+        "children": [
+            {
+                "name": "Nouveaux Emails",
+                "description": "Les emails qui viennent d'arriver et qui n'ont pas encore été traités.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "En Cours",
+                "description": "Les emails qui sont en cours de traitement ou de réponse.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "Clos",
+                "description": "Les emails qui ont été traités et archivés.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "Spam",
+                "description": "Les emails identifiés comme spam ou indésirables.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "Priorité Haute",
+                "description": "Les emails marqués comme urgents ou de haute importance.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "Emails Personnels",
+                "description": "Les emails personnels ou non professionnels.",
+                "emails": [],
+                "children": []
+            },
+            {
+                "name": "Emails Professionnels",
+                "description": "Les emails relatifs au travail et aux affaires professionnelles.",
+                "emails": [],
+                "children": []
+            }
+        ]
+    }
+}
