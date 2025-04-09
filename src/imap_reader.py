@@ -4,91 +4,96 @@ import time
 import email
 import streamlit as st
 from dotenv import load_dotenv
-from lib.info import get_email_body
-from lib.attachments import extract_attachments
-from llm import return_ans
-from lib.database import store_email  # Fonction pour stocker l'email dans la base de données centralisée
-from lib.categorizer import categorize_email  # Fonction pour catégoriser l'email
+from lib.info import extraire_corps_email
+from lib.attachments import extraire_pieces_jointes
+from llm import obtenir_reponse
+from lib.database import stocker_email  # Fonction pour stocker l'email dans la base de données
+from lib.categorizer import categoriser_email  # Fonction pour catégoriser l'email
 
-# Charger les variables d'environnement
+# Chargement des variables d'environnement
 load_dotenv()
 
-# Configurer la page Streamlit
+# Configuration de la page Streamlit
 st.set_page_config(
-    page_title="Centralized Email Classifier",
+    page_title="Classificateur Centralisé d'Emails",
     page_icon="📧",
 )
 
-st.write("# Welcome to the Centralized Email Classifier! 📧")
+st.write("# Bienvenue dans le Classificateur Centralisé d'Emails ! 📧")
 
-# Entrée des identifiants
-email_id = st.text_input("Enter your Email ID (Gmail) which you want to monitor", placeholder="johndoe@example.com")
-app_password = st.text_input("Enter your App Password (Gmail) to access the emails through IMAP",
-                             placeholder="yourpassword")
+# Section d'authentification
+adresse_email = st.text_input("Entrez votre adresse Gmail à surveiller",
+                              placeholder="exemple@gmail.com")
+mot_de_passe_app = st.text_input("Entrez votre mot de passe d'application Gmail pour l'accès IMAP",
+                                 placeholder="votre_mot_de_passe",
+                                 type="password")
 
-monitor = st.button("Monitor")
+bouton_surveillance = st.button("Démarrer la surveillance")
 
-if monitor and email_id and app_password:
+if bouton_surveillance and adresse_email and mot_de_passe_app:
+    # Connexion au serveur IMAP
+    try:
+        imap = imaplib.IMAP4_SSL(os.environ["GMAIL_IMAP_SERVER"],
+                                 os.environ["GMAIL_IMAP_PORT"])
+        imap.login(adresse_email, mot_de_passe_app)
+        st.success("Connexion IMAP réussie !")
 
-    # Connexion au serveur IMAP du fournisseur de messagerie
-    imap = imaplib.IMAP4_SSL(os.environ["GMAIL_IMAP_SERVER"], os.environ["GMAIL_IMAP_PORT"])
-    imap.login(email_id, app_password)
+        while True:
+            # Sélection de la boîte de réception
+            imap.select('INBOX')
+            status, donnees = imap.search(None, '(UNSEEN)')  # Emails non lus
 
-    while True:
-        # Sélectionner la boîte de réception
-        imap.select('INBOX')
-        typ, data = imap.search(None, '(UNSEEN)')
+            if status == 'OK':
+                if len(donnees[0].split()) == 0:
+                    st.info("Aucun nouveau message non lu.", icon="ℹ️")
+                else:
+                    st.success(f"{len(donnees[0].split())} nouveau(x) message(s) non lu(s) trouvé(s) !")
 
-        if typ == 'OK':
-            if len(data[0].split()) == 0:
-                st.info("No new unseen message(s).", icon="ℹ️")
-            else:
-                st.success("New unread messages found!")
+                for num_msg in donnees[0].split():
+                    # Récupération du message
+                    status, msg_data = imap.fetch(num_msg, '(RFC822)')
 
-            for num in data[0].split():
-                # Récupérer le message complet
-                typ, msg_data = imap.fetch(num, '(RFC822)')
+                    if status == 'OK':
+                        email_brut = msg_data[0][1]
+                        message = email.message_from_bytes(email_brut)
+                        sujet = message['Subject']
+                        expediteur = message['From']
+                        corps = extraire_corps_email(message)
 
-                if typ == 'OK':
-                    raw_email = msg_data[0][1]
-                    email_message = email.message_from_bytes(raw_email)
-                    subject = email_message['Subject']
-                    sender = email_message['From']
-                    body = get_email_body(email_message)
+                        # Extraction des pièces jointes
+                        pieces_jointes = extraire_pieces_jointes(message)
 
-                    # Extraire les pièces jointes si elles existent
-                    attachments = extract_attachments(email_message)
+                        # Catégorisation de l'email
+                        categorie, equipe = categoriser_email(sujet, expediteur, corps)
 
-                    # Catégoriser l'email et déterminer l'équipe
-                    category, team = categorize_email(subject, sender, body)
+                        # Stockage en base de données
+                        stocker_email(adresse_email, expediteur, sujet, corps,
+                                      categorie, equipe, pieces_jointes)
 
-                    # Stocker l'email dans la base de données centralisée
-                    store_email(email_id, sender, subject, body, category, team, attachments)
+                        # Affichage des détails
+                        with st.expander(f"📨 {sujet}"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("**Expéditeur:**")
+                                st.write(expediteur)
+                            with col2:
+                                st.markdown("**Catégorie:**")
+                                st.code(categorie)
 
-                    # Afficher les informations sur l'email
-                    with st.expander(f"Subject: {subject}"):
-                        st.subheader("From:")
-                        st.write(sender)
+                            st.markdown("**Contenu:**")
+                            st.write(corps)
 
-                        st.subheader("Subject:")
-                        st.write(subject)
+                            if pieces_jointes:
+                                st.markdown("**Pièces jointes:**")
+                                for piece in pieces_jointes:
+                                    st.write(f"📎 {piece}")
 
-                        st.subheader("Body:")
-                        st.write(body)
+                            st.markdown(f"**Équipe destinataire:**")
+                            st.info(equipe, icon="👥")
 
-                        if attachments:
-                            st.subheader("Attachments:")
-                            for attachment in attachments:
-                                st.write(attachment)
+            # Pause entre les vérifications
+            with st.spinner('Vérification des nouveaux emails dans 10 secondes...'):
+                time.sleep(10)
 
-                        # Montrer l'équipe à laquelle l'email doit être envoyé
-                        st.markdown(f'''
-                            ## Team to which this mail should be forwarded to:
-                            ```
-                            {team}
-                            ```
-                        ''')
-
-        # Attendre avant de vérifier de nouveaux emails
-        with st.spinner('Checking for new emails...'):
-            time.sleep(10)
+    except Exception as e:
+        st.error(f"Erreur de connexion : {str(e)}")

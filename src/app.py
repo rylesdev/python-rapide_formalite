@@ -4,91 +4,91 @@ import time
 import email
 import streamlit as st
 from dotenv import load_dotenv
-from lib.info import get_email_body
-from lib.attachments import extract_attachments
-from llm import return_ans
-from lib.database import store_email  # Fonction pour stocker l'email dans la base de données
-from lib.categorizer import categorize_email  # Fonction pour catégoriser l'email
+from lib.info import obtenir_corps_email
+from lib.attachments import extraire_pieces_jointes
+from llm import retourner_reponse
+from lib.database import stocker_email  # Fonction pour stocker l'email dans la base de données
+from lib.categorizer import categoriser_email  # Fonction pour catégoriser l'email
 
 # Charger les variables d'environnement
 load_dotenv()
 
 # Configurer la page Streamlit
 st.set_page_config(
-    page_title="Centralized Email Classifier",
+    page_title="Classificateur Centralisé d'Emails",
     page_icon="📧",
 )
 
-st.write("# Welcome to the Centralized Email Classifier! 📧")
+st.write("# Bienvenue dans le Classificateur Centralisé d'Emails ! 📧")
 
-# Entrée des identifiants
-email_id = st.text_input("Enter your Email ID (Gmail) which you want to monitor", placeholder="johndoe@example.com")
-app_password = st.text_input("Enter your App Password (Gmail) to access the emails through IMAP",
-                             placeholder="yourpassword")
+# Saisie des identifiants
+email_utilisateur = st.text_input("Entrez votre adresse email (Gmail) à surveiller", placeholder="johndoe@exemple.com")
+mot_de_passe_app = st.text_input("Entrez votre Mot de Passe d'Application (Gmail) pour accéder aux emails via IMAP",
+                             placeholder="votremotdepasse")
 
-monitor = st.button("Monitor")
+surveiller = st.button("Surveiller")
 
-if monitor and email_id and app_password:
+if surveiller and email_utilisateur and mot_de_passe_app:
 
-    # Connexion au serveur IMAP du fournisseur de messagerie
+    # Connexion au serveur IMAP
     imap = imaplib.IMAP4_SSL(os.environ["GMAIL_IMAP_SERVER"], os.environ["GMAIL_IMAP_PORT"])
-    imap.login(email_id, app_password)
+    imap.login(email_utilisateur, mot_de_passe_app)
 
     while True:
         # Sélectionner la boîte de réception
         imap.select('INBOX')
-        typ, data = imap.search(None, '(UNSEEN)')
+        typ, data = imap.search(None, '(UNSEEN)')  # Emails non lus
 
         if typ == 'OK':
             if len(data[0].split()) == 0:
-                st.info("No new unseen message(s).", icon="ℹ️")
+                st.info("Aucun nouveau message non lu.", icon="ℹ️")
             else:
-                st.success("New unread messages found!")
+                st.success("Nouveaux messages non lus trouvés !")
 
             for num in data[0].split():
                 # Récupérer le message complet
                 typ, msg_data = imap.fetch(num, '(RFC822)')
 
                 if typ == 'OK':
-                    raw_email = msg_data[0][1]
-                    email_message = email.message_from_bytes(raw_email)
-                    subject = email_message['Subject']
-                    sender = email_message['From']
-                    body = get_email_body(email_message)
+                    email_brut = msg_data[0][1]
+                    message_email = email.message_from_bytes(email_brut)
+                    sujet = message_email['Subject']
+                    expediteur = message_email['From']
+                    corps = obtenir_corps_email(message_email)
 
                     # Extraire les pièces jointes si elles existent
-                    attachments = extract_attachments(email_message)
+                    pieces_jointes = extraire_pieces_jointes(message_email)
 
                     # Catégoriser l'email et déterminer l'équipe
-                    category, team = categorize_email(subject, sender, body)
+                    categorie, equipe = categoriser_email(sujet, expediteur, corps)
 
-                    # Stocker l'email dans une base de données centralisée (ex: MongoDB, MySQL, etc.)
-                    store_email(email_id, sender, subject, body, category, team, attachments)
+                    # Stocker l'email dans la base de données
+                    stocker_email(email_utilisateur, expediteur, sujet, corps, categorie, equipe, pieces_jointes)
 
-                    # Afficher les informations sur l'email
-                    with st.expander(f"Subject: {subject}"):
-                        st.subheader("From:")
-                        st.write(sender)
+                    # Afficher les détails de l'email
+                    with st.expander(f"Sujet : {sujet}"):
+                        st.subheader("Expéditeur :")
+                        st.write(expediteur)
 
-                        st.subheader("Subject:")
-                        st.write(subject)
+                        st.subheader("Sujet :")
+                        st.write(sujet)
 
-                        st.subheader("Body:")
-                        st.write(body)
+                        st.subheader("Corps :")
+                        st.write(corps)
 
-                        if attachments:
-                            st.subheader("Attachments:")
-                            for attachment in attachments:
-                                st.write(attachment)
+                        if pieces_jointes:
+                            st.subheader("Pièces jointes :")
+                            for piece in pieces_jointes:
+                                st.write(piece)
 
-                        # Montrer l'équipe à laquelle l'email doit être envoyé
+                        # Afficher l'équipe destinataire
                         st.markdown(f'''
-                            ## Team to which this mail should be forwarded to:
+                            ## Équipe à laquelle transférer cet email :
                             ```
-                            {team}
+                            {equipe}
                             ```
                         ''')
 
-        # Attendre avant de vérifier de nouveaux emails
-        with st.spinner('Checking for new emails...'):
-            time.sleep(10)
+        # Attendre avant la prochaine vérification
+        with st.spinner('Vérification de nouveaux emails...'):
+            time.sleep(10)  # Toutes les 10 secondes

@@ -1,99 +1,109 @@
 import imaplib
-import os
-import time
 import email
-import streamlit as st
-from dotenv import load_dotenv
-from lib.info import extraire_corps_email
-from lib.attachments import extraire_pieces_jointes
-from llm import obtenir_reponse
-from lib.database import stocker_email  # Fonction pour stocker l'email dans la base de données
-from lib.categorizer import categoriser_email  # Fonction pour catégoriser l'email
+from email.header import decode_header
+import json
 
-# Chargement des variables d'environnement
-load_dotenv()
 
-# Configuration de la page Streamlit
-st.set_page_config(
-    page_title="Classificateur Centralisé d'Emails",
-    page_icon="📧",
-)
-
-st.write("# Bienvenue dans le Classificateur Centralisé d'Emails ! 📧")
-
-# Section d'authentification
-adresse_email = st.text_input("Entrez votre adresse Gmail à surveiller",
-                              placeholder="exemple@gmail.com")
-mot_de_passe_app = st.text_input("Entrez votre mot de passe d'application Gmail pour l'accès IMAP",
-                                 placeholder="votre_mot_de_passe",
-                                 type="password")
-
-bouton_surveillance = st.button("Démarrer la surveillance")
-
-if bouton_surveillance and adresse_email and mot_de_passe_app:
-    # Connexion au serveur IMAP
+def connect_to_mailbox(imap_server, email_account, password):
+    """
+    Connecte à la boîte mail via IMAP.
+    """
     try:
-        imap = imaplib.IMAP4_SSL(os.environ["GMAIL_IMAP_SERVER"],
-                                 os.environ["GMAIL_IMAP_PORT"])
-        imap.login(adresse_email, mot_de_passe_app)
-        st.success("Connexion IMAP réussie !")
-
-        while True:
-            # Sélection de la boîte de réception
-            imap.select('INBOX')
-            status, donnees = imap.search(None, '(UNSEEN)')  # Emails non lus
-
-            if status == 'OK':
-                if len(donnees[0].split()) == 0:
-                    st.info("Aucun nouveau message non lu.", icon="ℹ️")
-                else:
-                    st.success(f"{len(donnees[0].split())} nouveau(x) message(s) non lu(s) trouvé(s) !")
-
-                for num_msg in donnees[0].split():
-                    # Récupération du message
-                    status, msg_data = imap.fetch(num_msg, '(RFC822)')
-
-                    if status == 'OK':
-                        email_brut = msg_data[0][1]
-                        message = email.message_from_bytes(email_brut)
-                        sujet = message['Subject']
-                        expediteur = message['From']
-                        corps = extraire_corps_email(message)
-
-                        # Extraction des pièces jointes
-                        pieces_jointes = extraire_pieces_jointes(message)
-
-                        # Catégorisation de l'email
-                        categorie, equipe = categoriser_email(sujet, expediteur, corps)
-
-                        # Stockage en base de données
-                        stocker_email(adresse_email, expediteur, sujet, corps,
-                                      categorie, equipe, pieces_jointes)
-
-                        # Affichage des détails
-                        with st.expander(f"📨 {sujet}"):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.markdown("**Expéditeur:**")
-                                st.write(expediteur)
-                            with col2:
-                                st.markdown("**Catégorie:**")
-                                st.code(categorie)
-
-                            st.markdown("**Contenu:**")
-                            st.write(corps)
-
-                            if pieces_jointes:
-                                st.markdown("**Pièces jointes:**")
-                                for piece in pieces_jointes:
-                                    st.write(f"📎 {piece}")
-
-                            st.markdown(f"**Équipe destinataire:**")
-                            st.info(equipe, icon="👥")
-
-            # Pause entre les vérifications
-            with st.spinner('Vérification des nouveaux emails dans 10 secondes...'):
-                time.sleep(10)
-
+        mail = imaplib.IMAP4_SSL(imap_server)
+        mail.login(email_account, password)
+        mail.select("inbox")
+        print("Connexion à la boîte mail réussie.")
+        return mail
     except Exception as e:
-        st.error(f"Erreur de connexion : {str(e)}")
+        print(f"Erreur de connexion : {e}")
+        return None
+
+
+def fetch_emails(mail):
+    """
+    Récupère tous les emails de la boîte de réception et les trie par statut.
+    """
+    status, messages = mail.search(None, "ALL")
+    email_list = {
+        "Nouveaux Emails": [],
+        "En Cours": [],
+        "Clos": [],
+        "Spam": [],
+        "Priorité Haute": [],
+        "Emails Personnels": [],
+        "Emails Professionnels": []
+    }
+
+    if status != "OK":
+        print("Impossible de récupérer les mails.")
+        return {}
+
+    for num in messages[0].split():
+        _, msg_data = mail.fetch(num, "(RFC822)")
+        raw_email = msg_data[0][1]
+        msg = email.message_from_bytes(raw_email)
+
+        # Décode les infos de l'email
+        subject, encoding = decode_header(msg.get("Subject"))[0]
+        if isinstance(subject, bytes):
+            subject = subject.decode(encoding if encoding else "utf-8", errors="ignore")
+
+        from_ = msg.get("From")
+        date_ = msg.get("Date")
+
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == "text/plain":
+                    body = part.get_payload(decode=True).decode(errors="ignore")
+                    break
+        else:
+            body = msg.get_payload(decode=True).decode(errors="ignore")
+
+        email_data = {
+            "from": from_,
+            "subject": subject,
+            "date": date_,
+            "body": body
+        }
+
+        # Trier les emails en fonction de leur statut
+        # Par exemple, ici, on pourrait décider manuellement du statut ou utiliser des règles (e.g., mots-clés dans l'objet ou l'expéditeur).
+
+        if "Urgent" in subject:
+            email_list["Priorité Haute"].append(email_data)
+        elif "Spam" in subject:
+            email_list["Spam"].append(email_data)
+        elif "Personnel" in subject:
+            email_list["Emails Personnels"].append(email_data)
+        elif "Professionnel" in subject:
+            email_list["Emails Professionnels"].append(email_data)
+        else:
+            email_list["Nouveaux Emails"].append(email_data)
+
+    return email_list
+
+
+def save_emails_to_storage(emails, filepath="server/data/output.json"):
+    """
+    Sauvegarde les emails dans un fichier JSON, en les triant par catégorie.
+    """
+    try:
+        # Charger les emails existants dans le fichier JSON, si nécessaire
+        try:
+            with open(filepath, "r", encoding="utf-8") as file:
+                stored_emails = json.load(file)
+        except FileNotFoundError:
+            stored_emails = []
+
+        # Ajouter les nouveaux emails à la liste existante
+        stored_emails.append(emails)
+
+        # Sauvegarder les emails dans le fichier
+        with open(filepath, "w", encoding="utf-8") as file:
+            json.dump(stored_emails, file, indent=4, ensure_ascii=False)
+
+        print("Emails sauvegardés avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde des emails : {e}")

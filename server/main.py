@@ -5,9 +5,9 @@ from email.header import decode_header
 from src.info import extract_email_info, print_email_info
 
 # Configuration IMAP
-IMAP_SERVER = "imap.example.com"
-EMAIL_ACCOUNT = "rapide_formalite@wanadoo.fr"
-PASSWORD = "tonMotDePasse"
+IMAP_SERVER = "imap.gmail.com"
+EMAIL_ACCOUNT = "adresse_mail@gmail.com"
+PASSWORD = "mot_de_passe"
 
 # Dictionnaire de catégories pour les emails
 CATEGORIES = {

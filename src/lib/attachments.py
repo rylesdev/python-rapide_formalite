@@ -63,8 +63,3 @@ def extract_attachments_and_sort(email_message, email_category):
         pass
 
     return extracted_texts
-
-# Exemple d'utilisation avec un email (assurez-vous de remplacer la logique de récupération d'email par un code réel)
-# email_message = fetch_email_from_imap('imap.gmail.com', 'mail@gmail.com', 'your app pswd')
-# extracted_texts = extract_attachments_and_sort(email_message, "Nouveaux Emails")
-

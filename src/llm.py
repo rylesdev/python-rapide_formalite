@@ -5,128 +5,126 @@ from haystack.components.builders.prompt_builder import PromptBuilder
 from haystack.components.retrievers.in_memory import InMemoryBM25Retriever
 from haystack.document_stores.in_memory import InMemoryDocumentStore
 from json import loads
-from lib.database import store_email  # Fonction pour stocker les emails dans la base de données centralisée
-from lib.categorizer import categorize_email  # Fonction pour catégoriser les emails
+from lib.database import stocker_email  # Fonction pour stocker les emails
+from lib.categorizer import categoriser_email  # Fonction pour catégoriser les emails
 
-# Charger les données JSON du RAG
-with open('src/data/mail.json', 'r') as f:
-    data = loads(f.read())
+# Chargement des données JSON pour le RAG
+with open('src/data/mail.json', 'r') as fichier:
+    donnees = loads(fichier.read())
 
-# Convertir les données JSON en documents Haystack
-docs = []
-for doc in data['nodes']:
-    docs.append(Document(content=str(doc)))
+# Conversion des données JSON en documents Haystack
+documents = []
+for noeud in donnees['nodes']:
+    documents.append(Document(content=str(noeud)))
 
-# Nettoyer et pré-traiter les documents (optionnel)
-cleaner = DocumentCleaner()
-ppdocs = cleaner.run(documents=docs)
+# Nettoyage des documents
+nettoyeur = DocumentCleaner()
+documents_propres = nettoyeur.run(documents=documents)
 
-# Création d'un magasin de documents en mémoire pour la RAG
-docu_store = InMemoryDocumentStore()
-docu_store.write_documents(ppdocs['documents'])
+# Création du magasin de documents en mémoire
+magasin_documents = InMemoryDocumentStore()
+magasin_documents.write_documents(documents_propres['documents'])
 
-# Définir un récupérateur BM25 en mémoire
-retriever = InMemoryBM25Retriever(document_store=docu_store, top_k=1)
+# Configuration du récupérateur BM25
+recuperateur = InMemoryBM25Retriever(document_store=magasin_documents, top_k=1)
 
-# Template pour la génération de requêtes à destination du modèle
-template = '''
-    As the person in charge of mail distribution, your task is to direct emails to the right recipients.
-    Use the context provided to determine the most fitting recipient(s) for the query.
-    The context includes the organization's structure, departments, and teams.
-    You can also use the description tag from the context to match the semantic meaning of the email.
-    Your answer should be the id of the team(s) at the leaf node of the hierarchy to whom the query should be directed.
+# Modèle de prompt pour le système RAG
+modele_prompt = '''
+En tant que responsable de la distribution des emails, votre tâche est de diriger les messages vers les bons destinataires.
+Utilisez le contexte fourni pour déterminer le(s) destinataire(s) le(s) plus approprié(s) pour la requête.
+Le contexte inclut la structure organisationnelle, les départements et les équipes.
+Vous pouvez aussi utiliser le tag "description" du contexte pour faire correspondre le sens sémantique de l'email.
+Votre réponse doit être l'id de l'équipe (nœud feuille) à qui la requête doit être adressée.
 
-    Context: 
-    {% for document in documents %}
-        {{ document.content }}
-    {% endfor %}
+Contexte: 
+{% for document in documents %}
+    {{ document.content }}
+{% endfor %}
 
-    Query: {{ query }}
-    Please respond in the following format: <x>
-    where 'x' is the id of the leaf node.
-    Your answer should ONLY INCLUDE THE ID
-    '''
+Requête: {{ query }}
+Merci de répondre dans le format suivant: <x>
+où 'x' est l'id du nœud feuille.
+Votre réponse ne doit contenir QUE L'ID
+'''
 
-# Définir le générateur Ollama
-prompt_builder = PromptBuilder(template=template)
+# Construction des composants du pipeline
+constructeur_prompt = PromptBuilder(template=modele_prompt)
 
-# Utilisation de Qwen 4b comme modèle de génération, mais vous pouvez utiliser d'autres modèles comme Llama3.1
-generator = OllamaGenerator(
+# Configuration du générateur Ollama (modèle Qwen 4b)
+generateur = OllamaGenerator(
     model="qwen:4b",
     url="http://localhost:11434",
-    generation_kwargs={
+    parametres_generation={
         "num_predict": 100,
         "temperature": 0.9,
     },
 )
 
-# Construire le pipeline RAG
-rag_pipeline = Pipeline()
-rag_pipeline.add_component("retriever", retriever)
-rag_pipeline.add_component("prompt_builder", prompt_builder)
-rag_pipeline.add_component("llm", generator)
-rag_pipeline.connect("retriever", "prompt_builder.documents")
-rag_pipeline.connect("prompt_builder", "llm")
+# Construction du pipeline RAG
+pipeline_rag = Pipeline()
+pipeline_rag.add_component("recuperateur", recuperateur)
+pipeline_rag.add_component("constructeur_prompt", constructeur_prompt)
+pipeline_rag.add_component("modele_llm", generateur)
+pipeline_rag.connect("recuperateur", "constructeur_prompt.documents")
+pipeline_rag.connect("constructeur_prompt", "modele_llm")
 
 
-def return_ans(query):
+def obtenir_reponse(requete):
     try:
-        ans = rag_pipeline.run({
-            "prompt_builder": {"query": query},
-            "retriever": {"query": query}
+        resultat = pipeline_rag.run({
+            "constructeur_prompt": {"query": requete},
+            "recuperateur": {"query": requete}
         })
-        print(ans)
-        response = {
-            "team": ans['llm']['replies'][0].strip()
+        print(resultat)
+        reponse = {
+            "equipe": resultat['modele_llm']['replies'][0].strip()
         }
-        return response
+        return reponse
     except Exception as e:
-        print(f"Error in processing: {e}")
-        response = {
-            "team": "Error processing the request"
+        print(f"Erreur de traitement : {e}")
+        reponse = {
+            "equipe": "Erreur lors du traitement de la requête"
         }
-        return response
+        return reponse
 
 
-def process_email_and_categorize(sender, subject, body):
-    # Ici, on appelle la fonction pour catégoriser l'email et déterminer l'équipe
-    # Vous pouvez aussi ajuster cette fonction en fonction du contenu de l'email et de votre projet.
-    print("Processing email...")
-    email_content = f"Sender: {sender}\nSubject: {subject}\nBody: {body}"
-    return return_ans(email_content)
+def traiter_et_categoriser_email(expediteur, sujet, corps):
+    """Traite un email et détermine sa catégorie et l'équipe concernée"""
+    print("Traitement de l'email en cours...")
+    contenu_email = f"Expéditeur: {expediteur}\nSujet: {sujet}\nCorps: {corps}"
+    return obtenir_reponse(contenu_email)
 
 
-def store_email_and_categorize(email_id, sender, subject, body):
-    # Catégoriser et stocker l'email dans la base de données
-    response = process_email_and_categorize(sender, subject, body)
-    team_id = response.get("team")
+def stocker_et_categoriser_email(id_email, expediteur, sujet, corps):
+    """Catégorise et stocke un email dans la base de données"""
+    reponse = traiter_et_categoriser_email(expediteur, sujet, corps)
+    id_equipe = reponse.get("equipe")
 
-    # Stockage dans la base de données (ajustez selon votre implémentation)
-    store_email(email_id, sender, subject, body, team_id)
+    # Stockage dans la base de données
+    stocker_email(id_email, expediteur, sujet, corps, id_equipe)
 
-    return team_id
-
-
-def test_output():
-    content = '''
-    I am writing to report a specific issue I have been facing with the online banking platform that requires attention and resolution.
-
-The problem I am encountering revolves around inconsistencies in the transaction history displayed in my online banking account. Specifically, certain transactions appear to be duplicated or missing altogether, leading to confusion and inaccurate financial records.
-
-For example, on 2nd April, I noticed that a transaction for $5000 appears twice in my transaction history, resulting in an incorrect balance calculation. Furthermore, transactions made on 4th April do not reflect in the transaction history, despite being successfully processed and confirmed by Barclays.
-
-These discrepancies not only disrupt my ability to track and manage my finances accurately but also raise concerns about the reliability and integrity of the online banking system.
-
-I urge your technical team to investigate this matter promptly and rectify the issues causing these inconsistencies in the transaction history. It is crucial to ensure that the online banking platform provides accurate and up-to-date information to customers to maintain trust and confidence in Barclays' services.
-
-I kindly request regular updates on the progress made in resolving this issue and ensuring the stability of the online banking platform.
-
-I look forward to a swift resolution and a seamless banking experience moving forward.'''
-
-    print("Output of Model: ")
-    print(return_ans(content))
+    return id_equipe
 
 
-# Tester l'extraction et la catégorisation pour un exemple de contenu
+def tester_sortie():
+    """Fonction de test du système"""
+    contenu_test = '''
+    Je vous écris pour signaler un problème spécifique que je rencontre avec la plateforme de banque en ligne.
+
+Le problème concerne des incohérences dans l'historique des transactions affiché. Certaines transactions apparaissent en double ou sont manquantes.
+
+Par exemple, le 2 avril, une transaction de 5000€ apparaît deux fois dans mon historique. De plus, des transactions du 4 avril n'apparaissent pas malgré leur confirmation par la banque.
+
+Ces anomalies perturbent ma gestion financière et soulèvent des inquiétudes sur la fiabilité du système.
+
+Je demande à votre équipe technique d'enquêter sur ce problème et de le résoudre rapidement. Il est crucial que la plateforme fournisse des informations exactes pour maintenir la confiance des clients.
+
+Je serais reconnaissant de recevoir des mises à jour régulières sur la résolution de ce problème.'''
+
+    print("Résultat du modèle : ")
+    print(obtenir_reponse(contenu_test))
+
+
+# Point d'entrée pour les tests
 if __name__ == "__main__":
-    test_output()
+    tester_sortie()

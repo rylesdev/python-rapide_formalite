@@ -1,15 +1,10 @@
 from flask import Flask, jsonify, request
-from imap_reader import connect_to_mailbox, fetch_emails
+import connect_to_mailbox, fetch_emails
 from email_classifier import classify_email
 from email_storage import store_email_data
 from summarize import summarize_email
 
 app = Flask(__name__)
-
-# Configuration IMAP
-IMAP_SERVER = "imap.example.com"
-EMAIL_ACCOUNT = "tonemail@example.com"
-PASSWORD = "tonMotDePasse"
 
 # Dictionnaire des catégories d'emails
 CATEGORIES = {
