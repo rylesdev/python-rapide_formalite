@@ -1,0 +1,25 @@
+# Core
+streamlit==1.32.0
+fastapi==0.109.0
+uvicorn==0.27.0
+python-dotenv==1.0.0
+
+# Email Processing
+imaplib2==3.6
+email-validator==2.0.0
+
+# Database
+pymongo==4.6.1
+motor==3.3.2
+
+# RAG & AI
+ollama==0.1.14
+haystack-ai==1.22.0
+haystack-integrations==0.6.0
+
+# Security
+bcrypt==4.1.2
+
+# Utils
+python-magic==0.4.27
+filetype==1.2.0
